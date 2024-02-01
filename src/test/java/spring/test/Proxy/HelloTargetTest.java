@@ -5,10 +5,15 @@ import org.aopalliance.intercept.MethodInterceptor;
 import org.aopalliance.intercept.MethodInvocation;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.springframework.aop.ClassFilter;
+import org.springframework.aop.Pointcut;
 import org.springframework.aop.framework.ProxyFactoryBean;
+import org.springframework.aop.support.DefaultPointcutAdvisor;
+import org.springframework.aop.support.NameMatchMethodPointcut;
 
 import java.lang.reflect.Proxy;
 
+import static org.assertj.core.api.Assertions.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class HelloTargetTest {
@@ -16,15 +21,15 @@ class HelloTargetTest {
     @Test
     void simpleProxy() {
         Hello hello = new HelloTarget();
-        Assertions.assertThat(hello.sayHello("syh")).isEqualTo("Hello syh");
-        Assertions.assertThat(hello.sayHi("syh")).isEqualTo("Hi syh");
-        Assertions.assertThat(hello.sayThanks("syh")).isEqualTo("Thanks syh");
+        assertThat(hello.sayHello("syh")).isEqualTo("Hello syh");
+        assertThat(hello.sayHi("syh")).isEqualTo("Hi syh");
+        assertThat(hello.sayThanks("syh")).isEqualTo("Thanks syh");
 
         //프록시 적용
         Hello proxy = new HelloUppercase(new HelloTarget());
-        Assertions.assertThat(proxy.sayHello("syh")).isEqualTo("HELLO SYH");
-        Assertions.assertThat(proxy.sayHi("syh")).isEqualTo("HI SYH");
-        Assertions.assertThat(proxy.sayThanks("syh")).isEqualTo("THANKS SYH");
+        assertThat(proxy.sayHello("syh")).isEqualTo("HELLO SYH");
+        assertThat(proxy.sayHi("syh")).isEqualTo("HI SYH");
+        assertThat(proxy.sayThanks("syh")).isEqualTo("THANKS SYH");
     }
 
     @Test
@@ -35,9 +40,9 @@ class HelloTargetTest {
                 new Class[]{Hello.class},
                 new UppercaseHandler(new HelloTarget())
         );
-        Assertions.assertThat(dynamicProxy.sayHello("syh")).isEqualTo("HELLO SYH");
-        Assertions.assertThat(dynamicProxy.sayHi("syh")).isEqualTo("HI SYH");
-        Assertions.assertThat(dynamicProxy.sayThanks("syh")).isEqualTo("THANKS SYH");
+        assertThat(dynamicProxy.sayHello("syh")).isEqualTo("HELLO SYH");
+        assertThat(dynamicProxy.sayHi("syh")).isEqualTo("HI SYH");
+        assertThat(dynamicProxy.sayThanks("syh")).isEqualTo("THANKS SYH");
     }
 
     @Test
@@ -48,10 +53,68 @@ class HelloTargetTest {
 
         Hello proxiedHello = (Hello) pfBean.getObject();
 
-        Assertions.assertThat(proxiedHello.sayHello("syh")).isEqualTo("HELLO SYH");
-        Assertions.assertThat(proxiedHello.sayHi("syh")).isEqualTo("HI SYH");
-        Assertions.assertThat(proxiedHello.sayThanks("syh")).isEqualTo("THANKS SYH");
+        assertThat(proxiedHello.sayHello("syh")).isEqualTo("HELLO SYH");
+        assertThat(proxiedHello.sayHi("syh")).isEqualTo("HI SYH");
+        assertThat(proxiedHello.sayThanks("syh")).isEqualTo("THANKS SYH");
     }
+
+    @Test
+    void pointcutAdvisor() {
+        ProxyFactoryBean pfBean = new ProxyFactoryBean();
+        pfBean.setTarget(new HelloTarget());
+
+        NameMatchMethodPointcut pointcut = new NameMatchMethodPointcut();
+        pointcut.setMappedName("sayH*");
+
+        Hello proxiedHello = (Hello) pfBean.getObject();
+
+        pfBean.addAdvisor(new DefaultPointcutAdvisor(pointcut, new UpperCaseAdvice()));
+        assertThat(proxiedHello.sayHello("syh")).isEqualTo("HELLO SYH");
+        assertThat(proxiedHello.sayHi("syh")).isEqualTo("HI SYH");
+        assertThat(proxiedHello.sayThanks("syh")).isEqualTo("Thanks syh");
+    }
+
+    @Test
+    void classNamePointcutAdvisor() {
+        NameMatchMethodPointcut classMethodPointcut = new NameMatchMethodPointcut() {
+            public ClassFilter getClassFilter() {
+                return new ClassFilter() {
+                    @Override
+                    public boolean matches(Class<?> clazz) {
+                        return clazz.getSimpleName().startsWith("HelloT");
+                    }
+                };
+            }
+        };
+
+        classMethodPointcut.setMappedName("sayH*");
+
+        checkAdviced(new HelloTarget(), classMethodPointcut, true);
+        class HelloWorld extends HelloTarget {};
+        checkAdviced(new HelloWorld(), classMethodPointcut, false);
+        class HelloTT extends HelloTarget {};
+        checkAdviced(new HelloTT(), classMethodPointcut, true);
+
+    }
+
+    private void checkAdviced(Object target, Pointcut pointcut, boolean adviced) {
+        ProxyFactoryBean pfBean = new ProxyFactoryBean();
+        pfBean.setTarget(target);
+        pfBean.addAdvisor(new DefaultPointcutAdvisor(pointcut, new UpperCaseAdvice()));
+        Hello proxiedHello = (Hello) pfBean.getObject();
+
+        if (adviced) {
+            assertThat(proxiedHello.sayHello("syh")).isEqualTo("HELLO SYH");
+            assertThat(proxiedHello.sayHi("syh")).isEqualTo("HI SYH");
+            assertThat(proxiedHello.sayThanks("syh")).isEqualTo("Thanks syh");
+        } else {
+            assertThat(proxiedHello.sayHello("syh")).isEqualTo("Hello syh");
+            assertThat(proxiedHello.sayHi("syh")).isEqualTo("Hi syh");
+            assertThat(proxiedHello.sayThanks("syh")).isEqualTo("Thanks syh");
+        }
+    }
+
+
 
     static class UpperCaseAdvice implements MethodInterceptor {
         @Override
